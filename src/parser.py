@@ -1,3 +1,4 @@
+import os
 import re
 import base64
 from googleapiclient.discovery import build
@@ -5,7 +6,8 @@ from google.oauth2.credentials import Credentials
 from bs4 import BeautifulSoup
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
-TOKEN_FILE = 'token.json'
+# Point TOKEN_FILE at the project-root token.json
+TOKEN_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'token.json'))
 
 def get_service():
     creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
