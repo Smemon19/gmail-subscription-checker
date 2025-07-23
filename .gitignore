@@ -1,0 +1,24 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.env
+.env.*
+
+# Gmail credentials & tokens
+credentials.json
+token.json
+
+# Editors & IDEs
+.vscode/
+.idea/
+
+# macOS / Windows files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
