@@ -1,82 +1,73 @@
-import os
 import re
 import base64
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from bs4 import BeautifulSoup
 
-# Match what auth.py used
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+TOKEN_FILE = 'token.json'
 
 def get_service():
-    creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
     return build('gmail', 'v1', credentials=creds)
 
 def decode_body(data):
-    """Base64-url decode Gmail message bodies to a UTF-8 string."""
-    decoded_bytes = base64.urlsafe_b64decode(data.encode('ASCII'))
-    return decoded_bytes.decode('utf-8', errors='replace')
+    decoded = base64.urlsafe_b64decode(data.encode('ASCII'))
+    return decoded.decode('utf-8', errors='replace')
 
 def extract_unsubscribe_links(html):
-    """Return all links where text or href contains 'unsubscribe'."""
     soup = BeautifulSoup(html, 'html.parser')
     links = []
     for a in soup.find_all('a', href=True):
-        text = a.get_text().lower()
         href = a['href']
-        if 'unsubscribe' in text or 'unsubscribe' in href:
+        text = a.get_text().lower()
+        if 'unsubscribe' in href or 'unsubscribe' in text:
             links.append(href)
-    return list(set(links))  # dedupe
+    return list(set(links))
 
-def parse_subscriptions(max_results=10):
+def parse_subscriptions_data(max_results=10):
     service = get_service()
-    # 1) List message IDs
-    results = service.users().messages().list(userId='me', maxResults=max_results).execute()
-    messages = results.get('messages', [])
-    if not messages:
-        print("No messages found.")
-        return
+    resp = service.users().messages().list(userId='me', maxResults=max_results).execute()
+    msgs = resp.get('messages', [])
+    data = []
 
-    # 2) For each message, fetch full data
-    for m in messages:
-        msg = service.users().messages().get(
+    for m in msgs:
+        full = service.users().messages().get(
             userId='me',
             id=m['id'],
             format='full'
         ).execute()
-        headers = {h['name']: h['value'] for h in msg['payload']['headers']}
+        headers = {h['name']: h['value'] for h in full['payload']['headers']}
         subject = headers.get('Subject', '(no subject)')
-        list_unsub = headers.get('List-Unsubscribe', '')
+        unsub_links = []
 
-        # 3) Extract from header if present
-        unsub_links = re.findall(r'<(https?://[^>]+)>', list_unsub)
+        # 1) List-Unsubscribe header
+        lu = headers.get('List-Unsubscribe', '')
+        unsub_links += re.findall(r'<(https?://[^>]+)>', lu)
 
-        # 4) Find HTML body
-        html = None
+        # 2) HTML body
         def walk(parts):
-            nonlocal html
-            for part in parts or []:
-                if part.get('mimeType') == 'text/html' and part.get('body', {}).get('data'):
-                    html = decode_body(part['body']['data'])
-                    return True
-                if part.get('parts'):
-                    if walk(part['parts']):
-                        return True
-            return False
+            nonlocal unsub_links
+            for p in parts or []:
+                if p.get('mimeType') == 'text/html' and p.get('body', {}).get('data'):
+                    html = decode_body(p['body']['data'])
+                    unsub_links += extract_unsubscribe_links(html)
+                elif p.get('parts'):
+                    walk(p['parts'])
+        walk(full['payload'].get('parts'))
 
-        walk(msg['payload'].get('parts'))
+        data.append({
+            'id': m['id'],
+            'subject': subject,
+            'unsubscribe_links': list(set(unsub_links))
+        })
 
-        # 5) Parse HTML for unsubscribe links
-        if html:
-            unsub_links += extract_unsubscribe_links(html)
+    return data
 
-        # 6) If we found any, print them
-        unsub_links = list(set(unsub_links))
-        if unsub_links:
-            print(f"\nID: {m['id']}\nSubject: {subject}")
-            for link in unsub_links:
-                print("  ↳", link)
-
-if __name__ == '__main__':
-    parse_subscriptions()
-
+# legacy print-based parser (optional)
+def parse_subscriptions(max_results=10):
+    for item in parse_subscriptions_data(max_results):
+        if item['unsubscribe_links']:
+            print(f\"ID: {item['id']}\\nSubject: {item['subject']}\")
+            for link in item['unsubscribe_links']:
+                print(\"  ↳\", link)
