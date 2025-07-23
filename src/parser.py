@@ -64,10 +64,11 @@ def parse_subscriptions_data(max_results=10):
 
     return data
 
-# legacy print-based parser (optional)
+# backward-compatible, print-based wrapper
 def parse_subscriptions(max_results=10):
-    for item in parse_subscriptions_data(max_results):
+    items = parse_subscriptions_data(max_results)
+    for item in items:
         if item['unsubscribe_links']:
-            print(f\"ID: {item['id']}\\nSubject: {item['subject']}\")
+            print(f"ID: {item['id']}\nSubject: {item['subject']}")
             for link in item['unsubscribe_links']:
-                print(\"  ↳\", link)
+                print("  ↳", link)
